@@ -4,6 +4,25 @@ let currentIndex = 0;
 const preview = document.getElementById("preview");
 const canvas = document.getElementById("cropCanvas");
 
+async function getScreenshots(url) {
+  const res = await fetch('http://localhost:3000/capture-video', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ url })
+  });
+
+  const data = await res.json();
+
+  data.images.map(base64 => `data:image/png;base64,${base64}`);
+
+  images = data.images
+      .filter(Boolean);
+
+  showImage()
+}
+
 document.getElementById("load").addEventListener("click", async () => {
   const url = document.getElementById("url").value;
 
@@ -38,11 +57,22 @@ document.getElementById("load").addEventListener("click", async () => {
   }
 });
 
+function saveState() {
+  chrome.storage.local.set({
+    images,
+    currentIndex,
+    zoom,
+    cropRect
+  });
+}
+
 function showImage() {
   if (images.length === 0) return;
   preview.src = images[currentIndex];
   document.getElementById("counter").innerText =
     `${currentIndex + 1} / ${images.length}`;
+
+  saveState()
 }
 
 document.getElementById("next").addEventListener("click", () => {
@@ -64,10 +94,48 @@ let startY = 0;
 let isDragging = false;
 let cropRect = null;
 
-// resize canvas theo image
+let zoom = 1;
+
 preview.onload = () => {
-  canvas.width = preview.clientWidth;
-  canvas.height = preview.clientHeight;
+  const container = document.querySelector('.viewer');
+
+  const scale = Math.min(
+    container.clientWidth / preview.naturalWidth,
+    container.clientHeight / preview.naturalHeight
+  );
+
+  const displayWidth = preview.naturalWidth * scale;
+  const displayHeight = preview.naturalHeight * scale;
+
+  preview.style.width = displayWidth + 'px';
+  preview.style.height = displayHeight + 'px';
+
+  canvas.width = displayWidth;
+  canvas.height = displayHeight;
+
+  canvas.style.width = displayWidth + 'px';
+  canvas.style.height = displayHeight + 'px';
+};
+
+// resize canvas theo image
+// preview.onload = () => {
+//   canvas.width = preview.clientWidth;
+//   canvas.height = preview.clientHeight;
+// };
+
+function applyZoom() {
+  const stage = document.getElementById('stage');
+  stage.style.transform = `scale(${zoom})`;
+}
+
+document.getElementById('zoomIn').onclick = () => {
+  zoom *= 1.2;
+  applyZoom();
+};
+
+document.getElementById('zoomOut').onclick = () => {
+  zoom /= 1.2;
+  applyZoom();
 };
 
 // mouse events
@@ -110,42 +178,83 @@ function drawRect() {
   );
 }
 
-document.getElementById("crop").addEventListener("click", () => {
-  if (!cropRect) return;
-
+document.getElementById('crop').onclick = () => {
   const img = new Image();
-  img.crossOrigin = "anonymous";
   img.src = preview.src;
 
   img.onload = () => {
-    const scaleX = img.naturalWidth / canvas.width;
-    const scaleY = img.naturalHeight / canvas.height;
+    // 👉 scale giữa natural và display
+    const displayWidth = preview.clientWidth;
+    const displayHeight = preview.clientHeight;
 
-    const tempCanvas = document.createElement("canvas");
-    const tctx = tempCanvas.getContext("2d");
+    const scaleX = img.naturalWidth / displayWidth;
+    const scaleY = img.naturalHeight / displayHeight;
 
-    tempCanvas.width = Math.abs(cropRect.width) * scaleX;
-    tempCanvas.height = Math.abs(cropRect.height) * scaleY;
+    // 👉 tính cả zoom
+    const realX = (cropRect.x / zoom) * scaleX;
+    const realY = (cropRect.y / zoom) * scaleY;
+    const realWidth = (cropRect.width / zoom) * scaleX;
+    const realHeight = (cropRect.height / zoom) * scaleY;
 
-    tctx.drawImage(
+    const outCanvas = document.createElement('canvas');
+    const ctx = outCanvas.getContext('2d');
+
+    outCanvas.width = Math.abs(realWidth);
+    outCanvas.height = Math.abs(realHeight);
+
+    ctx.drawImage(
       img,
-      cropRect.x * scaleX,
-      cropRect.y * scaleY,
-      cropRect.width * scaleX,
-      cropRect.height * scaleY,
+      realX,
+      realY,
+      realWidth,
+      realHeight,
       0,
       0,
-      tempCanvas.width,
-      tempCanvas.height
+      outCanvas.width,
+      outCanvas.height
     );
 
-    tempCanvas.toBlob((blob) => {
+    outCanvas.toBlob((blob) => {
       const url = URL.createObjectURL(blob);
 
       chrome.downloads.download({
-        url: url,
-        filename: `cropped_${Date.now()}.png`
+        url,
+        filename: `crop_${Date.now()}.png`
       });
     });
   };
+};
+
+document.getElementById("clear").onclick = () => {
+  chrome.storage.local.clear(() => {
+    images = [];
+    currentIndex = 0;
+    zoom = 1;
+    cropRect = null;
+
+    preview.src = "";
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    alert("Cleared!");
+  });
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+  chrome.storage.local.get(
+    ["images", "currentIndex", "zoom", "cropRect"],
+    (data) => {
+      images = data.images || [];
+      currentIndex = data.currentIndex || 0;
+      zoom = data.zoom || 1;
+      cropRect = data.cropRect || null;
+
+      if (images.length > 0) {
+        preview.src = images[currentIndex];
+      }
+
+      applyZoom();
+      drawRect();
+      showImage()
+    }
+  );
 });
