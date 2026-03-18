@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Image Previewer",
+  "version": "1.0",
+  "description": "Preview all images from a URL",
+  "permissions": ["activeTab", "downloads"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
