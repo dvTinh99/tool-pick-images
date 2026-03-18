@@ -3,9 +3,15 @@
   "name": "Image Previewer",
   "version": "1.0",
   "description": "Preview all images from a URL",
-  "permissions": ["activeTab", "downloads", "storage"],
+  "permissions": ["activeTab", "downloads", "storage", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "action": {
-    "default_popup": "popup.html"
+    "default_title": "Toggle Sidebar"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
   }
 }
